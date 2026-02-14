@@ -526,6 +526,8 @@ class GptOssModel(nn.Module):
         tp_rank_end = min((tp_rank + 1) * per_rank_intermediate_size, intermediate_size)
 
         for name, weight in weights:
+            # print(f"Loading weight {name} with shape {weight.shape}")  # !!!
+
             # Skip layers on other devices.
             if is_pp_missing_parameter(name, self):
                 continue
@@ -538,8 +540,16 @@ class GptOssModel(nn.Module):
                 else:
                     narrow_weight = weight[:, :, 2 * tp_rank_start : 2 * tp_rank_end]
 
-                narrow_weight = narrow_weight.permute(0, 2, 1).contiguous()
-                param = params_dict[name]
+                if (not hasattr(self.vllm_config.model_config.hf_config, "mlp_in_openai_order")
+                    or not self.vllm_config.model_config.hf_config.mlp_in_openai_order):
+                    # Permute weights from HF order (experts, in, out) to OpenAI order (experts, out, in)
+                    narrow_weight = narrow_weight.permute(0, 2, 1).contiguous()
+
+                try:
+                    param = params_dict[name]
+                except KeyError:
+                    print(f"Error: weight {name} not in model params_dict\n{params_dict.keys() = }")
+                    raise
 
                 param.copy_(narrow_weight)
                 loaded_params.add(name)
@@ -550,7 +560,12 @@ class GptOssModel(nn.Module):
                     narrow_weight = weight[ep_rank_start:ep_rank_end, ...]
                 else:
                     narrow_weight = weight[:, tp_rank_start:tp_rank_end, :]
-                narrow_weight = narrow_weight.permute(0, 2, 1).contiguous()
+
+                if (not hasattr(self.vllm_config.model_config.hf_config, "mlp_in_openai_order")
+                    or not self.vllm_config.model_config.hf_config.mlp_in_openai_order):
+                    # Permute weights from HF order (experts, in, out) to OpenAI order (experts, out, in)
+                    narrow_weight = narrow_weight.permute(0, 2, 1).contiguous()
+
                 param = params_dict[name]
 
                 param.copy_(narrow_weight)
