@@ -559,7 +559,7 @@ class GptOssModel(nn.Module):
                 if use_ep:
                     narrow_weight = weight[ep_rank_start:ep_rank_end, ...]
                 else:
-                    narrow_weight = weight[:, tp_rank_start:tp_rank_end, :]
+                    narrow_weight = weight[:, :, tp_rank_start:tp_rank_end]
 
                 if (not hasattr(self.vllm_config.model_config.hf_config, "mlp_in_openai_order")
                     or not self.vllm_config.model_config.hf_config.mlp_in_openai_order):
