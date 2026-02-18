@@ -1,0 +1,31 @@
+# Slim Dockerfile for the ishikori vLLM fork.
+#
+# Instead of compiling vLLM from source (which requires ~60+ GB of disk and a
+# GPU-capable build machine), we start from the official pre-built vLLM image
+# and overlay our Python-only patches on top.
+#
+# This brings the build down to a simple "docker pull + COPY" which completes
+# in minutes and fits comfortably on a standard GitHub Actions runner.
+#
+# When the submodule is updated, bump VLLM_VERSION to match.
+
+ARG VLLM_VERSION=v0.13.0
+FROM vllm/vllm-openai:${VLLM_VERSION}
+
+# Overlay any Python-only patches from our fork.
+# The installed vllm package lives under dist-packages in the system Python.
+# We copy the full vllm source tree and overwrite only the Python files;
+# compiled .so extensions from the base image are left untouched.
+#
+# We detect the site-packages path dynamically so this works regardless of
+# the Python version baked into the base image.
+RUN VLLM_SITE=$(python3 -c "import vllm, pathlib; print(pathlib.Path(vllm.__file__).parent)") \
+    && echo "vllm installed at: ${VLLM_SITE}" \
+    && echo "${VLLM_SITE}" > /tmp/.vllm_site
+
+COPY vllm/ /tmp/vllm_src/
+RUN VLLM_SITE=$(cat /tmp/.vllm_site) \
+    && cp -rf /tmp/vllm_src/* "${VLLM_SITE}/" \
+    && rm -rf /tmp/vllm_src /tmp/.vllm_site
+
+ENTRYPOINT ["vllm", "serve"]
