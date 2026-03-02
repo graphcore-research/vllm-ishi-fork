@@ -534,26 +534,15 @@ class GptOssModel(nn.Module):
 
             if ".w13_weight" in name:
                 # Handle MLP gate and up projection weights
-                # Checkpoint shape: [E, hidden, 2*intermediate] (OpenAI order)
-                #              or   [E, 2*intermediate, hidden] (HF order)
-                # FusedMoE param:   [E, 2*intermediate_per_tp, hidden]
+                # Extract gate and up projection parts
                 if use_ep:
                     narrow_weight = weight[ep_rank_start:ep_rank_end, ...]
                 else:
-                    if (hasattr(self.vllm_config.model_config.hf_config, "mlp_in_openai_order")
-                        and self.vllm_config.model_config.hf_config.mlp_in_openai_order):
-                        # OpenAI order: [E, hidden, 2*intermediate] -> slice dim 2
-                        narrow_weight = weight[:, :, 2 * tp_rank_start : 2 * tp_rank_end]
-                    else:
-                        # HF order: [E, 2*intermediate, hidden] -> slice dim 1
-                        narrow_weight = weight[:, 2 * tp_rank_start : 2 * tp_rank_end, :]
+                    narrow_weight = weight[:, :, 2 * tp_rank_start : 2 * tp_rank_end]
 
-                # Transpose to FusedMoE layout [E, 2*intermediate_per_tp, hidden]
-                # Both OpenAI [E, hidden, 2*int] and HF [E, 2*int, hidden] need
-                # this: OpenAI needs permute, HF is already correct but was sliced
-                # on dim 1 above so no permute needed.
-                if (hasattr(self.vllm_config.model_config.hf_config, "mlp_in_openai_order")
-                    and self.vllm_config.model_config.hf_config.mlp_in_openai_order):
+                if (not hasattr(self.vllm_config.model_config.hf_config, "mlp_in_openai_order")
+                    or not self.vllm_config.model_config.hf_config.mlp_in_openai_order):
+                    # Permute weights from HF order (experts, in, out) to OpenAI order (experts, out, in)
                     narrow_weight = narrow_weight.permute(0, 2, 1).contiguous()
 
                 try:
@@ -567,33 +556,15 @@ class GptOssModel(nn.Module):
                 continue
             elif ".w2_weight" in name:
                 # Handle MLP down projection weights
-                # Checkpoint shape: [E, intermediate, hidden] (OpenAI order)
-                #              or   [E, hidden, intermediate] (HF order)
-                # FusedMoE param:   [E, hidden, intermediate_per_tp]
                 if use_ep:
                     narrow_weight = weight[ep_rank_start:ep_rank_end, ...]
                 else:
-                    if (hasattr(
-                            self.vllm_config.model_config.hf_config,
-                            "mlp_in_openai_order")
-                        and self.vllm_config.model_config.hf_config
-                            .mlp_in_openai_order):
-                        # OpenAI: [E, intermediate, hidden] -> slice dim 1
-                        narrow_weight = weight[
-                            :, tp_rank_start:tp_rank_end, :]
-                    else:
-                        # HF: [E, hidden, intermediate] -> slice dim 2
-                        narrow_weight = weight[
-                            :, :, tp_rank_start:tp_rank_end]
+                    narrow_weight = weight[:, tp_rank_start:tp_rank_end, :]
 
-                # Transpose to FusedMoE layout [E, hidden, int_per_tp]
-                if (hasattr(
-                        self.vllm_config.model_config.hf_config,
-                        "mlp_in_openai_order")
-                    and self.vllm_config.model_config.hf_config
-                        .mlp_in_openai_order):
-                    narrow_weight = narrow_weight.permute(
-                        0, 2, 1).contiguous()
+                if (not hasattr(self.vllm_config.model_config.hf_config, "mlp_in_openai_order")
+                    or not self.vllm_config.model_config.hf_config.mlp_in_openai_order):
+                    # Permute weights from HF order (experts, in, out) to OpenAI order (experts, out, in)
+                    narrow_weight = narrow_weight.permute(0, 2, 1).contiguous()
 
                 param = params_dict[name]
 
