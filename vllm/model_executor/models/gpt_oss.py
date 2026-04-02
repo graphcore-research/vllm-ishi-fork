@@ -537,22 +537,26 @@ class GptOssModel(nn.Module):
                 # Extract gate and up projection parts
                 # Need to slice on intermediate dimension for TP
                 # w13 weight is MLP gate up projection, so [experts, out, in] => [experts, 2 * intermediate, hidden]
-                if (not hasattr(self.vllm_config.model_config.hf_config, "mlp_in_openai_order")
-                    or not self.vllm_config.model_config.hf_config.mlp_in_openai_order):
+                if (
+                    not hasattr(
+                        self.vllm_config.model_config.hf_config, "mlp_in_openai_order"
+                    )
+                    or not self.vllm_config.model_config.hf_config.mlp_in_openai_order
+                ):
                     # Permute weights from HF order (experts, in, out) to OpenAI order (experts, out, in)
                     weight = weight.permute(0, 2, 1).contiguous()
 
                 if use_ep:
                     narrow_weight = weight[ep_rank_start:ep_rank_end, ...]
                 else:
-                    narrow_weight = weight[
-                        :, 2 * tp_rank_start : 2 * tp_rank_end, :
-                    ]
+                    narrow_weight = weight[:, 2 * tp_rank_start : 2 * tp_rank_end, :]
 
                 try:
                     param = params_dict[name]
                 except KeyError:
-                    print(f"Error: weight {name} not in model params_dict\n{params_dict.keys() = }")
+                    print(
+                        f"Error: weight {name} not in model params_dict\n{params_dict.keys() = }"
+                    )
                     raise
 
                 param.copy_(narrow_weight)
@@ -562,8 +566,12 @@ class GptOssModel(nn.Module):
                 # Handle MLP down projection weights
                 # Need to slice on intermediate dimension for TP
                 # w2 weight is MLP down projection, so [experts, out, in] => [experts, hidden, intermeidate]
-                if (not hasattr(self.vllm_config.model_config.hf_config, "mlp_in_openai_order")
-                    or not self.vllm_config.model_config.hf_config.mlp_in_openai_order):
+                if (
+                    not hasattr(
+                        self.vllm_config.model_config.hf_config, "mlp_in_openai_order"
+                    )
+                    or not self.vllm_config.model_config.hf_config.mlp_in_openai_order
+                ):
                     # Permute weights from HF order (experts, in, out) to OpenAI order (experts, out, in)
                     weight = weight.permute(0, 2, 1).contiguous()
 
